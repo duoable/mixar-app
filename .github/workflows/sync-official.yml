@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: 2026 Adeveda Enterprises Private Limited
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Keeps a fork current with the official Mixar repository: merges the official
+# default branch into this one and mirrors new release tags, which the
+# "Update and Run Mixar" scripts read the app version from. A merge conflict
+# fails the run (GitHub emails the owner); resolve it locally and push.
+
+name: Sync with official Mixar
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-official
+  cancel-in-progress: false
+
+env:
+  OFFICIAL_REPO: Mixar-AI/mixar-app
+  BRANCH: main
+
+jobs:
+  sync:
+    # Never runs in the official repository itself.
+    if: github.repository != 'Mixar-AI/mixar-app'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Merge official changes
+        run: |
+          gh api -X POST "repos/$REPO/merge-upstream" -f branch="$BRANCH" \
+            --jq '"\(.merge_type): \(.message)"'
+
+      - name: Mirror release tags
+        run: |
+          fork_tags="$(gh api --paginate "repos/$REPO/git/matching-refs/tags" --jq '.[].ref')"
+          gh api --paginate "repos/$OFFICIAL_REPO/git/matching-refs/tags" \
+            --jq '.[] | "\(.ref) \(.object.sha)"' |
+          while read -r ref sha; do
+            if ! grep -qxF "$ref" <<<"$fork_tags"; then
+              gh api -X POST "repos/$REPO/git/refs" -f ref="$ref" -f sha="$sha" >/dev/null
+              echo "added $ref"
+            fi
+          done

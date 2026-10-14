@@ -10,3 +10,7 @@ docs/development/i18n-translation/glossary/*.json linguist-generated=true
 docs/development/i18n-translation/logical/*.json linguist-generated=true
 docs/development/i18n-translation/terms/*.json linguist-generated=true
 docs/development/i18n-translation/review_notes.json linguist-generated=true
+
+# cmd.exe mis-parses labels in LF-only batch files; the double-click updater is
+# run straight from the checkout, so keep it CRLF on every platform.
+/Update?and?Run?Mixar.bat text eol=crlf

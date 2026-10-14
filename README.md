@@ -98,6 +98,24 @@ make install        # install embedded Python packages into the built app
 
 ### Run and test
 
+For a one-click update, double-click **`Update and Run Mixar.command`** (macOS)
+or **`Update and Run Mixar.bat`** (Windows) in the repository root. It
+fast-forwards the current branch, runs first-time setup if needed, rebuilds
+when the commit or Blender release changed since its last successful build
+(a clean build on a Blender release change), and then launches the app for the
+`MIXAR_ENV` in `.env`. Local changes that block the pull are left untouched;
+the existing checkout is built and launched instead. The app is built as the
+newest `vX.Y.Z` release tag in the checkout when that is ahead of `VERSION`
+(the release pipeline bumps `VERSION` after tagging), unless `.env` sets
+`MIXAR_VERSION`.
+
+In a fork, the scripts also fetch `Mixar-AI/mixar-app` (adding a
+`mixar-official` remote when none points there), merge its `main` into a local
+`main` and push the result to the fork; a conflict is reported and skipped.
+`.github/workflows/sync-official.yml` does the same on GitHub every hour —
+merging the official `main` and mirroring new release tags — so the fork stays
+current even when no one runs the scripts.
+
 ```bash
 make run                 # launch build/Dev
 make run Prod            # launch build/Prod
