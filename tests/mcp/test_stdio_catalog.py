@@ -33,9 +33,11 @@ class FakeConnector:
         self.calls.append((name, arguments))
         payload = {"result": {"domains": {"build": 1}, "tools": [
             {"name": "execute_bpy_script", "domain": "build", "summary": "Run bpy.",
-             "read_only": False, "credits": "free."}]}, "usage": {"request_id": call_id}}
-        return {"content": [{"type": "text", "text": json.dumps(payload)}],
-                "structuredContent": payload, "isError": False}
+             "read_only": False, "credits": "free."}]}}
+        # The backend's minimized envelope: a free call's receipt is in _meta only.
+        return {"content": [{"type": "text", "text": json.dumps(payload["result"])}],
+                "structuredContent": payload, "isError": False,
+                "_meta": {"mixar/usage": {"call_id": call_id, "credits_charged": 0}}}
 
     def cancel(self, call_id=None):
         pass
@@ -82,7 +84,7 @@ def test_backend_discovery_hints_survive_the_launcher():
 def test_catalog_index_merges_ui_tools_and_answers_the_ui_domain_locally():
     async def check(client, connector):
         merged = (await client.call_tool("mixar_tool_catalog", {})).structured_content["result"]
-        assert merged["domains"] == {"build": 1, "ui": 5, "scenes": 5}
+        assert merged["domains"] == {"build": 1, "ui": 5, "scenes": 6}
         assert {"mixar_ui_observe", "execute_bpy_script"} <= {entry["name"] for entry in merged["tools"]}
         ui_only = (await client.call_tool("mixar_tool_catalog", {"domain": "ui"})).structured_content
         assert {entry["domain"] for entry in ui_only["result"]["tools"]} == {"ui"}
