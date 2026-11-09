@@ -15,6 +15,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 export ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Ensure Homebrew and standard CLI paths are present
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 # Load .env if it exists (local dev overrides)
 ENV_FILE="$ROOT_DIR/.env"
 if [ -f "$ENV_FILE" ]; then
@@ -136,7 +139,11 @@ export BUILD_CORES=${BUILD_CORES:-$DEFAULT_CORES}
 # Platform-specific build settings (now that BUILD_CORES is defined)
 if [[ "$PLATFORM" == "macOS" ]]; then
     # macOS-specific settings
-    export CMAKE_GENERATOR_ARGS=""  # Use default (Xcode or Make)
+    if command -v ninja >/dev/null 2>&1 || [ -x /opt/homebrew/bin/ninja ]; then
+        export CMAKE_GENERATOR_ARGS="-G Ninja"
+    else
+        export CMAKE_GENERATOR_ARGS=""  # Use default (Xcode or Make)
+    fi
     export BUILD_ARGS="--parallel $BUILD_CORES --config \$CMAKE_BUILD_TYPE"
     # Pin the SDK to the selected Xcode's macOS SDK. Without this, clang's
     # default sysroot can resolve to /Library/Developer/CommandLineTools/SDKs
