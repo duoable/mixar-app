@@ -15,6 +15,11 @@ make run [Prod]    # launches the built Mixar app (build/Prod/bin/Mixar.app)
 Alternatively:
 - Double-click `./Update and Run Mixar.command` in Finder or run it in terminal.
 
+## Language Guidelines
+
+- All code, comments, docstrings, commit messages, and repository documentation must ALWAYS be in English.
+- User communication may occur in Finnish (or other languages), but code and commit history must remain strictly English.
+
 ## Built App Locations
 
 - Executable: `build/Prod/bin/Mixar.app/Contents/MacOS/Mixar`
