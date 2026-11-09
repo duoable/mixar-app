@@ -97,6 +97,10 @@ inline constexpr char caption_bright_mark = '\x1f';
 /* -- Provider row: 46 tall plate, text 20 in, dot 15.5 left of it ------- */
 inline constexpr float row_h = 46.0f;
 inline constexpr float row_radius = 14.0f;
+/** The plate is inset this much top and bottom inside its 46 tall slot, so
+ * stacked rows (a lit one under a hovered one) never touch; the hit rect
+ * stays the full slot. */
+inline constexpr float row_inset_y = 3.0f;
 inline constexpr float row_text_x = 20.0f;
 /** A long provider name may run to the pill's edge before it is ellipsised. */
 inline constexpr float row_text_right = 8.0f;
@@ -106,6 +110,13 @@ inline constexpr uchar row_fill_a[4] = {0x2A, 0x2B, 0x2D, 255};
 inline constexpr uchar row_fill_b[4] = {0x31, 0x32, 0x35, 255};
 inline constexpr uchar row_text_off[4] = {0x9C, 0x9C, 0x9F, 255};
 inline constexpr uchar row_dot[4] = {0x7D, 0xDB, 0x8E, 255};
+/** A row's logo (an engine's): a preview icon the button carries
+ * (`kit.choice(icon_value=…)`), #row_icon square, #row_icon_x into the pill,
+ * the name #row_icon_gap after it; dimmed on a rest row. */
+inline constexpr float row_icon = 28.0f;
+inline constexpr float row_icon_x = 14.0f;
+inline constexpr float row_icon_gap = 12.0f;
+inline constexpr float row_icon_rest_alpha = 0.7f;
 
 /* -- Sidebar foot (Local model, Other app): a row with a glyph ---------- */
 inline constexpr float footer_h = 64.0f;

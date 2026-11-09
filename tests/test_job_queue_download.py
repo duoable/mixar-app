@@ -623,6 +623,82 @@ def test_finish_import_does_not_resurrect_a_failed_job(queue, monkeypatch):
     assert not os.path.exists(path)
 
 
+def test_an_import_held_for_a_long_render_is_not_timed_out(queue, monkeypatch):
+    """A downloaded result waits while a render runs (an import would edit
+    the render's depsgraph). The watchdog used to count that wait as download
+    time, so a render past the deadline failed the job and deleted the file it
+    was waiting to import."""
+    QM._queues["test_download"] = queue
+    clock = [_WATCHDOG_NOW]
+    job = _downloading_job(queue, monkeypatch, 10.0)
+    monkeypatch.setattr(QM.time, "monotonic", lambda: clock[0])
+    rendering = [True]
+    monkeypatch.setattr(QD, "_render_running", lambda: rendering[0])
+    imported = []
+    monkeypatch.setattr(QD, "import_file", lambda *a, **k: imported.append(a) or ["Rig"])
+    monkeypatch.setattr(QD, "_pinned_scene", lambda *a, **k: __import__("contextlib").nullcontext())
+    monkeypatch.setattr(QD, "_record_output_landed", lambda *a, **k: None)
+    fd, path = DL.tempfile.mkstemp(suffix=".glb", prefix="mixar_result_")
+    os.close(fd)
+    tick = _watchdog_tick(monkeypatch)
+
+    assert queue._finish_import(job, path, "GLB") == QD.RENDER_RETRY_S
+    clock[0] += C.DOWNLOAD_WATCHDOG_DEADLINE_S + 600  # the render runs long
+    assert queue._finish_import(job, path, "GLB") == QD.RENDER_RETRY_S
+    tick()
+    assert job.state == JobState.RUNNING_DOWNLOAD and os.path.exists(path)
+    assert job.download_elapsed(clock[0]) == pytest.approx(10.0)
+
+    rendering[0] = False  # the render ends: the import runs, the hold is banked
+    clock[0] += 1.0
+    queue._finish_import(job, path, "GLB")
+    assert imported and job.state == JobState.SUCCESS
+    assert job.import_held_since == 0.0
+    assert job.import_held_s == pytest.approx(C.DOWNLOAD_WATCHDOG_DEADLINE_S + 601)
+    os.remove(path)
+
+
+def test_an_import_waits_while_a_bake_runs(queue, monkeypatch):
+    """An INVOKE_DEFAULT bake evaluates a registered depsgraph on the job
+    thread like a render; prod 4.4.0 crashed in graph_id_tag_update when the
+    scene changed mid-bake. The shared busy() check holds results for it."""
+    from unittest.mock import MagicMock
+    from mixar.modules.common.render_coordinator import core as slot
+
+    running = {"OBJECT_BAKE"}
+    fake = MagicMock()
+    fake.app.is_job_running.side_effect = lambda job: job in running
+    monkeypatch.setattr(slot, "bpy", fake)
+    monkeypatch.setattr(slot, "_active", None)
+    monkeypatch.setattr(QD, "bpy", fake)
+    QM._queues["test_download"] = queue
+    job = _downloading_job(queue, monkeypatch, 1.0)
+    imported = []
+    monkeypatch.setattr(QD, "import_file", lambda *a, **k: imported.append(a) or ["Rig"])
+    monkeypatch.setattr(QD, "_pinned_scene", lambda *a, **k: __import__("contextlib").nullcontext())
+    monkeypatch.setattr(QD, "_record_output_landed", lambda *a, **k: None)
+    fd, path = DL.tempfile.mkstemp(suffix=".glb", prefix="mixar_result_")
+    os.close(fd)
+
+    assert queue._finish_import(job, path, "GLB") == QD.RENDER_RETRY_S
+    assert not imported and job.import_held_since
+    running.clear()  # the bake ends
+    queue._finish_import(job, path, "GLB")
+    assert imported and job.state == JobState.SUCCESS
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def test_a_held_import_does_not_shield_a_stranded_download(queue, monkeypatch):
+    """Only the hold is excluded: transfer time before it still counts."""
+    QM._queues["test_download"] = queue
+    monkeypatch.setattr(QM.FeatureQueue, "_cancel_on_backend", staticmethod(lambda job_id: None))
+    job = _downloading_job(queue, monkeypatch, C.DOWNLOAD_WATCHDOG_DEADLINE_S + 60)
+    job.import_held_s = 30.0  # an earlier, short hold
+    _watchdog_tick(monkeypatch)()
+    assert job.state == JobState.FAILED
+
+
 def test_finish_failed_keeps_the_first_terminal_verdict(queue, monkeypatch):
     job = _downloading_job(queue, monkeypatch, 1.0)
     job.state = JobState.FAILED
@@ -819,3 +895,14 @@ def test_manual_job_falls_back_to_the_shown_scene_only_without_a_name(tabs):
     kept = _tab("Kept", "")
     tabs.scenes["Kept"] = kept
     assert tabs.module.resolve_job_scene("Kept", "") is kept
+
+
+def test_a_landed_result_is_journaled_before_the_save_point(monkeypatch):
+    """A restore of a file written after the import must not adopt the job
+    again (session_recovery: ``landed_jobs``)."""
+    from mixar.modules.session_recovery import runtime
+    calls = []
+    monkeypatch.setattr(runtime, "note_job_landed", lambda job_id: calls.append(("landed", job_id)))
+    monkeypatch.setattr(runtime, "request_save_point", lambda reason: calls.append(("save", reason)))
+    QD._request_save_point(SimpleNamespace(backend_job_id="job-42"))
+    assert calls == [("landed", "job-42"), ("save", "generation_import")]

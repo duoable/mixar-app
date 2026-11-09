@@ -211,3 +211,72 @@ def test_fingerprint_failure_preserves_inventory_and_known_edits(
                       rotation_euler=(0, 0, 0), scale=(1, 1, 1), material_slots=[]))
     changes = executor._detect_changes(before, executor._capture_scene_state())
     assert changes['created'] == ['new'] and changes['deleted'] == [removed.name]
+
+
+@pytest.mark.parametrize("script, scans", [
+    ("__RESULT__ = len(bpy.data.objects)", False),
+    ("ob = bpy.data.objects['A']\nob.location.x = 1.0", False),
+    ("dg = bpy.context.evaluated_depsgraph_get()\n__RESULT__ = 1", True),
+    ("ev = obj.evaluated_get(dg)", True),
+    ("mesh.materials.append(mat.original)", True),
+    ("bpy.data.meshes.new_from_object(o)", True),
+])
+def test_the_evaluated_material_scan_runs_only_after_scripts_that_touch_evaluated_data(
+        executor, monkeypatch, script, scans):
+    # The scan walks every material slot in the file; a script that never
+    # named evaluated data cannot have stored an evaluated material.
+    module = sys.modules[executor.__class__.__module__]
+    calls = []
+    monkeypatch.setattr(module, "restore_original_materials", lambda: calls.append(1) or 0)
+    executor.execute(script, push_undo=False)
+    assert bool(calls) is scans
+
+
+@pytest.mark.parametrize("tail", ["raise RuntimeError('script failed mid-edit')",
+                                  "__RESULT__ = len(bm.faces)"])
+def test_edit_meshes_are_refreshed_even_after_a_bmesh_script_that_raised(executor, monkeypatch, tail):
+    # A script that grew the live edit BMesh and then raised never reached
+    # update_edit_mesh; the next redraw would read its stale loop triangles
+    # (extract_tris_bmesh). The refresh lives in the executor's `finally`.
+    module = sys.modules[executor.__class__.__module__]
+    calls = []
+    monkeypatch.setattr(module, "refresh_edit_meshes", lambda: calls.append(1) or 1)
+    result = executor.execute("\n".join((
+        "import bmesh",
+        "bm = bmesh.from_edit_mesh(bpy.context.object.data)",
+        "bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=4)",
+        tail,
+    )), push_undo=False)
+    assert result.success is tail.startswith("__RESULT__"), result.error
+    assert calls == [1]
+
+
+@pytest.mark.parametrize("tail", ["raise RuntimeError('script failed after growing the mesh')",
+                                  "__RESULT__ = len(me.loops)"])
+def test_meshes_a_script_resized_are_repaired_even_when_it_raised(executor, monkeypatch, tail):
+    # A script that grew a mesh through the data API can leave out-of-range
+    # corner/edge indices; the next draw faults natively (count_indices,
+    # calc_face_tri_starts_mesh). The repair lives in the executor's `finally`
+    # and is reported to the agent.
+    module = sys.modules[executor.__class__.__module__]
+    snapshots, repairs = [], []
+    monkeypatch.setattr(module, "snapshot_mesh_sizes", lambda: snapshots.append(1) or {"m": 1})
+    monkeypatch.setattr(module, "repair_changed_meshes",
+                        lambda before: repairs.append(before) or ["Grown"])
+    result = executor.execute("\n".join((
+        "me = bpy.data.meshes['Grown']",
+        "me.loops.add(24)",
+        tail,
+    )), push_undo=False)
+    assert result.success is tail.startswith("__RESULT__"), result.error
+    assert snapshots == [1] and repairs == [{"m": 1}]
+    assert "repaired invalid mesh topology" in result.output and "'Grown'" in result.output
+
+
+def test_a_script_rejected_before_exec_validates_no_mesh(executor, monkeypatch):
+    module = sys.modules[executor.__class__.__module__]
+    repairs = []
+    monkeypatch.setattr(module, "repair_changed_meshes", lambda before: repairs.append(before) or [])
+    result = executor.execute("x = ().__class__.__bases__[0].__subclasses__()", push_undo=False)
+    assert result.success is False
+    assert repairs == [None]

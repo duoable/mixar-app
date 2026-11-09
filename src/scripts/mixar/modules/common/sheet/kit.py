@@ -220,13 +220,27 @@ def dismiss(layout, text, kind=SECONDARY, default=False, docked=False):
     tag(layout, kind, extra=DOCK_FIELD if docked else 0.0)
 
 
-def choice(layout, operator_id, text, kind, lit, extra=0.0, **choice_props):
+def confirm(layout, operator_id, text, kind=PRIMARY, default=False):
+    """A button that closes the dialog and runs ``operator_id`` (a
+    ``template_popup_confirm`` confirm button): the sheet's own action when
+    the dialog has done its job once it is clicked (Connect engine). ``text``
+    is already translated. Returns the operator properties. Stock fallback: a
+    plain operator button (the dialog then stays open)."""
+    if not hasattr(layout, 'template_popup_confirm'):
+        return layout.operator(operator_id, text=text, translate=False)
+    props = layout.template_popup_confirm(operator_id, text=text, cancel_text="", translate=False)
+    _flag(layout, kind, default)
+    tag(layout, kind)
+    return props
+
+
+def choice(layout, operator_id, text, kind, lit, extra=0.0, icon_value=0, **choice_props):
     """A pickable row / chip: a pick operator with the choice it makes
     (``provider=`` / ``model=`` for `mixar_byok.pick`; empty values are left
     unset). ``extra`` is the kind's payload (FOOTER_ROW: FOOT_MONITOR /
-    FOOT_TERMINAL). ``text`` is a catalog name or already-translated text:
-    never translated here."""
-    props = layout.operator(operator_id, text=text, translate=False)
+    FOOT_TERMINAL); ``icon_value`` a preview icon a PROVIDER_ROW leads with (a
+    logo). ``text`` is a catalog name or already-translated text."""
+    props = layout.operator(operator_id, text=text, translate=False, icon_value=icon_value)
     for name, value in choice_props.items():
         if value:
             setattr(props, name, value)
@@ -385,12 +399,14 @@ def row(parent, h_dp, left=0.0, right=0.0, packed=False, align=None):
     return inner
 
 
-def row_right(layout, text):
-    """The right margin of a provider pill: the artboard's ROW_RIGHT, shrunk
-    until a long name keeps ROW_TEXT_X of pill on both sides, but never
-    closer than 16 dp to the divider (then the painter ellipsises)."""
-    need = text_width(layout, PROVIDER_ROW, text) + 2 * ROW_TEXT_X
-    return min(ROW_RIGHT, max(ROW_MIN_RIGHT, SIDEBAR - LEFT_INSET - need))
+def row_right(layout, texts):
+    """The right margin every sidebar plate shares: the artboard's ROW_RIGHT,
+    shrunk until the longest of ``texts`` keeps ROW_TEXT_X of pill on both
+    sides, but never closer than 16 dp to the divider (then the painter
+    ellipsises). One margin for the column, so a lit plate and a hovered one
+    are the same width."""
+    need = max((text_width(layout, PROVIDER_ROW, text) for text in texts), default=0.0)
+    return min(ROW_RIGHT, max(ROW_MIN_RIGHT, SIDEBAR - LEFT_INSET - need - 2 * ROW_TEXT_X))
 
 
 def fixed(parent, h_dp):

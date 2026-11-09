@@ -137,7 +137,9 @@ void agent_bubble_send_button(const bContext * /*C*/,
             int(r.ymin) - region->winrct.ymin,
             short(BLI_rctf_size_x(&r)),
             short(BLI_rctf_size_y(&r)),
-            state.stop_visible ? TIP_("Stop the running turn") : TIP_("Send"));
+            state.stop_visible  ? TIP_("Stop the running turn") :
+            state.steer_visible ? TIP_("Add this message to the task Mixie is working on") :
+                                  TIP_("Send"));
 
   /* Refine / Revert: the moodboard node's operators, addressed at the
    * composer. Same tooltips and disabled hints as the node tile, so one
@@ -260,6 +262,9 @@ void agent_bubble_references_draw(const bContext *C,
       const float cy = BLI_rctf_cent_y(&image);
       const rctf glyph = {image.xmin + 10 * u, image.xmin + 38 * u, cy - 14 * u, cy + 14 * u};
       const bool video = file && item.kind == "video";
+      if (video) {
+        ED_moodboard_attachment_target(C, region, path.c_str(), glyph, g.view);
+      }
       const AgentIcon icon = !file                 ? AGENT_ICON_FOLDER :
                                video                 ? AGENT_ICON_VIDEO :
                                item.kind == "image"  ? AGENT_ICON_IMAGE :
